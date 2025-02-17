@@ -199,7 +199,7 @@ function damageEnemy(bullet, enemy) {
         enemiesKilled += 1;
 
         if (enemiesKilled % 5 === 0) {
-            spawnRate *= 0.95; // Increase spawn rate by 5%
+            spawnRate *= 0.9; // Increase spawn rate by 5%
             currentScene.time.removeAllEvents();
             currentScene.time.addEvent({ delay: spawnRate, callback: spawnEnemy, callbackScope: currentScene, loop: true });
         }
