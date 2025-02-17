@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+        <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Phaser Game</title>
+        <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+        }
+        #game-container {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
+</head>
+<body>
+<div id="game-container"></div>
+<script>
+const config = {
+    type: Phaser.AUTO,
+    width: 600, // Base width
+    height: 1200, // Base height
+    physics: {
+        default: 'arcade',
+        arcade: {
+            debug: false
+        }
+    },
+    scene: {
+        preload: preload,
+        create: create,
+        update: update
+    },
+    scale: {
+        mode: Phaser.Scale.FIT, // Scale the game to fit the screen while maintaining aspect ratio
+        autoCenter: Phaser.Scale.CENTER_BOTH, // Center the game canvas
+        parent: 'game-container', // Add a parent container for the game
+        width: '100%', // Use 100% of the parent container's width
+        height: '100%' // Use 100% of the parent container's height
+    }
+};
+
+const game = new Phaser.Game(config);
+let player;
+let touchStartX, touchStartY;
+let isMoving = false;
+let velocity = 200;
+let enemies;
+let bullets;
+let lastShotTime = 0;
+let playerHealth = 50;
+let score = 0;
+let scoreText;
+let healthText;
+let currentScene;
+let explosions;
+let enemiesKilled = 0;
+let spawnRate = 3000; // Initial spawn rate in milliseconds
+let enemySpeed = 50;
+
+function preload() {
+    this.load.image('player', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
+    this.load.image('enemy', 'https://labs.phaser.io/assets/sprites/wizball.png');
+    this.load.image('bullet', 'https://labs.phaser.io/assets/sprites/bullet.png');
+    this.load.spritesheet('explosion', 'https://labs.phaser.io/assets/sprites/explosion.png', { frameWidth: 64, frameHeight: 64 });
+}
+
+function create() {
+    currentScene = this;
+    player = this.physics.add.image(this.scale.width / 2, this.scale.height / 2, 'player');
+    player.setCollideWorldBounds(true);
+    
+    enemies = this.physics.add.group();
+    bullets = this.physics.add.group();
+    explosions = this.add.group();
+    
+    this.anims.create({
+        key: 'explode',
+        frames: this.anims.generateFrameNumbers('explosion', { start: 0, end: 23 }),
+        frameRate: 20,
+        repeat: 0
+    });
+    
+    this.time.addEvent({ delay: spawnRate, callback: spawnEnemy, callbackScope: this, loop: true });
+    
+    scoreText = this.add.text(10, 10, 'Score: 0', { fontSize: '32px', fill: '#FFF' });
+    healthText = this.add.text(this.scale.width - 200, 10, 'Health: '+playerHealth, { fontSize: '32px', fill: '#FFF' });
+
+    // Touch controls for mobile
+    this.input.on('pointerdown', (pointer) => {
+        touchStartX = pointer.x;
+        touchStartY = pointer.y;
+        isMoving = true;
+    });
+
+    this.input.on('pointermove', (pointer) => {
+        if (isMoving) {
+            let angle = Phaser.Math.Angle.Between(touchStartX, touchStartY, pointer.x, pointer.y);
+            player.setVelocity(Math.cos(angle) * velocity, Math.sin(angle) * velocity);
+        }
+    });
+
+    this.input.on('pointerup', () => {
+        isMoving = false;
+        player.setVelocity(0, 0);
+    });
+
+    this.physics.add.overlap(bullets, enemies, damageEnemy, null, this);
+    this.physics.add.overlap(player, enemies, damagePlayer, null, this);
+}
+
+function spawnEnemy() {
+    let edge = Phaser.Math.Between(0, 3); // Randomly select an edge (0: top, 1: right, 2: bottom, 3: left)
+    let x, y;
+
+    switch (edge) {
+        case 0: // Top edge
+            x = Phaser.Math.Between(0, this.scale.width);
+            y = -50; // Just above the screen
+            break;
+        case 1: // Right edge
+            x = this.scale.width + 50; // Just to the right of the screen
+            y = Phaser.Math.Between(0, this.scale.height);
+            break;
+        case 2: // Bottom edge
+            x = Phaser.Math.Between(0, this.scale.width);
+            y = this.scale.height + 50; // Just below the screen
+            break;
+        case 3: // Left edge
+            x = -50; // Just to the left of the screen
+            y = Phaser.Math.Between(0, this.scale.height);
+            break;
+    }
+
+    let enemy = enemies.create(x, y, 'enemy');
+    enemy.setVelocity(0, enemySpeed);
+    enemy.health = 30;
+
+    // Update enemy movement to always move toward the player
+    enemy.update = function() {
+        let angle = Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y);
+        this.setVelocity(Math.cos(angle) * enemySpeed, Math.sin(angle) * enemySpeed);
+    };
+}
+
+function update(time) {
+    enemies.children.iterate((enemy) => {
+        if (enemy) {
+            let angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, player.x, player.y);
+            enemy.setVelocity(Math.cos(angle) * enemySpeed, Math.sin(angle) * enemySpeed);
+        }
+    });
+
+    if (!isMoving && time > lastShotTime + 500) {
+        shootBullet.call(this);
+        lastShotTime = time;
+    }
+}
+
+function shootBullet() {
+    let closestEnemy = getClosestEnemy();
+    if (closestEnemy) {
+        let bullet = bullets.create(player.x, player.y, 'bullet');
+        let angle = Phaser.Math.Angle.Between(player.x, player.y, closestEnemy.x, closestEnemy.y);
+        this.physics.velocityFromAngle(Phaser.Math.RadToDeg(angle), 300, bullet.body.velocity);
+    }
+}
+
+function getClosestEnemy() {
+    let closestEnemy = null;
+    let minDistance = Infinity;
+    enemies.children.iterate((enemy) => {
+        let distance = Phaser.Math.Distance.Between(player.x, player.y, enemy.x, enemy.y);
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestEnemy = enemy;
+        }
+    });
+    return closestEnemy;
+}
+
+function damageEnemy(bullet, enemy) {
+    bullet.destroy();
+    enemy.health -= 10;
+    if (enemy.health <= 0) {
+        let explosion = currentScene.add.sprite(enemy.x, enemy.y, 'explosion');
+        explosion.play('explode');
+        explosion.once('animationcomplete', () => {
+            explosion.destroy();
+        });
+        enemy.destroy();
+        score += 1;
+        scoreText.setText('Score: ' + score);
+        enemiesKilled += 1;
+
+        if (enemiesKilled % 5 === 0) {
+            spawnRate *= 0.95; // Increase spawn rate by 5%
+            currentScene.time.removeAllEvents();
+            currentScene.time.addEvent({ delay: spawnRate, callback: spawnEnemy, callbackScope: currentScene, loop: true });
+        }
+    }
+}
+
+function damagePlayer(player, enemy) {
+    let explosion = currentScene.add.sprite(enemy.x, enemy.y, 'explosion');
+    explosion.play('explode');
+    explosion.once('animationcomplete', () => {
+        explosion.destroy();
+    });
+    enemy.destroy();
+    playerHealth -= 10;
+    healthText.setText('Health: ' + playerHealth);
+    if (playerHealth <= 0) {
+        gameOver();
+    }
+}
+
+function gameOver() {
+    currentScene.physics.pause();
+    player.setTint(0xff0000);
+    player.setVelocity(0, 0);
+    alert('Game Over!');
+}
+</script>
+
+</body>
+</html>
