@@ -62,6 +62,7 @@ let explosions;
 let enemiesKilled = 0;
 let spawnRate = 3000; // Initial spawn rate in milliseconds
 let enemySpeed = 50;
+let shotDelay = 500;
 
 function preload() {
     this.load.image('player', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
@@ -156,7 +157,7 @@ function update(time) {
         }
     });
 
-    if (!isMoving && time > lastShotTime + 500) {
+    if (!isMoving && time > lastShotTime + shotDelay) {
         shootBullet.call(this);
         lastShotTime = time;
     }
@@ -199,7 +200,10 @@ function damageEnemy(bullet, enemy) {
         enemiesKilled += 1;
 
         if (enemiesKilled % 5 === 0) {
-            spawnRate *= 0.9; // Increase spawn rate by 5%
+            spawnRate *= 0.75; // Increase spawn rate by 10%
+            spawnRate = Math.max(spawnRate, 500);
+            shotDelay *= 0.85; // Decrease shot delay by 10%
+            shotDelay = Math.max(shotDelay, 100);
             currentScene.time.removeAllEvents();
             currentScene.time.addEvent({ delay: spawnRate, callback: spawnEnemy, callbackScope: currentScene, loop: true });
         }
